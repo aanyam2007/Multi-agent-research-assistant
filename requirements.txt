@@ -4,3 +4,7 @@ langsmith
 python-dotenv
 langchain-groq
 langchain_tavily
+fastapi
+uvicorn[standard]
+streamlit
+requests
