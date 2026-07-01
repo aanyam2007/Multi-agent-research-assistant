@@ -60,7 +60,6 @@ reserch_agent/
 ├── state.py             # ResearchState TypedDict
 ├── prompts.py           # System prompts for all 4 agents
 ├── main.py              # CLI entry point (local use)
-├── api.py               # FastAPI REST wrapper (optional, local use)
 ├── agents/
 │   ├── orchestrator.py  # Supervisor — structured-output routing
 │   ├── researcher.py    # Tavily search + LLM fact extraction
