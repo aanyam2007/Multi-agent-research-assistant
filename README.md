@@ -25,11 +25,14 @@ User Query
 
 Each agent has strict role boundaries enforced by its system prompt — the Researcher only gathers facts, the Analyst only synthesizes, the Writer only drafts. The Orchestrator uses structured JSON outputs (Pydantic) to route between agents and signals `FINISH` when the report is ready.
 
+Every query runs as a **turn** inside a **thread**. Threads are resumable — reopen one and ask a follow-up, and the Researcher rewrites it into a standalone search query using the prior turns as context (e.g. "what about its downsides?" resolves against the previous question automatically).
+
 ---
 
 ## Features
 
 - **Real-time streaming UI** — watch each agent complete live in the browser
+- **Resumable conversation threads** — every query/report is saved to SQLite; reopen any past thread and keep asking follow-ups with full context
 - **Supervisor routing** — Orchestrator uses structured outputs to decide the next step; never hallucinates a route
 - **Role-bounded agents** — explicit system prompts prevent agents from overstepping their responsibilities
 - **Loop guard** — iteration cap (10) prevents runaway pipelines
@@ -47,6 +50,7 @@ Each agent has strict role boundaries enforced by its system prompt — the Rese
 | Web search | [Tavily](https://tavily.com) |
 | Observability | [LangSmith](https://smith.langchain.com) |
 | UI | [Streamlit](https://streamlit.io) |
+| Thread storage | SQLite (stdlib `sqlite3`) |
 | Package manager | [uv](https://github.com/astral-sh/uv) |
 
 ---
@@ -57,9 +61,11 @@ Each agent has strict role boundaries enforced by its system prompt — the Rese
 reserch_agent/
 ├── app_ui.py            # Streamlit UI (entry point for deployment)
 ├── graph.py             # LangGraph compilation — nodes, edges, routing
-├── state.py             # ResearchState TypedDict
+├── state.py             # ResearchState TypedDict + history formatting
+├── db.py                # SQLite persistence for threads & turns
+├── threads.db           # SQLite database (gitignored, created on first run)
 ├── prompts.py           # System prompts for all 4 agents
-├── main.py              # CLI entry point (local use)
+├── main.py              # CLI entry point (local use, thread-aware)
 ├── agents/
 │   ├── orchestrator.py  # Supervisor — structured-output routing
 │   ├── researcher.py    # Tavily search + LLM fact extraction
@@ -129,6 +135,19 @@ LANGSMITH_ENDPOINT = "https://api.smith.langchain.com"
 ```
 
 5. Click **Deploy** — the app reads secrets directly and the pipeline runs inside the Streamlit process (no separate server needed).
+
+> **Note:** Streamlit Community Cloud's filesystem is ephemeral. Thread history in `threads.db` persists while the app instance stays up, but resets on redeploys, reboots, or when the app wakes from sleeping after inactivity. For durable cross-restart history, point `db.py` at a hosted database (e.g. Postgres) instead.
+
+---
+
+## Conversation Threads
+
+Every query is stored as a **turn** inside a **thread**, in a local SQLite database (`threads.db`, created automatically on first run):
+
+- **Threads** — one per conversation, with a title (from the first query) and timestamps
+- **Turns** — one per query in a thread: the query, orchestrator plan, research data, analysis, and final report
+
+The sidebar (Streamlit) or thread picker (CLI) lists all saved threads. Reopening one reloads its full turn history, and any follow-up question is passed through the prior turns so the Researcher can resolve context-dependent questions (e.g. "what about its downsides?") into a standalone search query before hitting Tavily.
 
 ---
 
