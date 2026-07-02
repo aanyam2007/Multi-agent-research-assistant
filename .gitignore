@@ -11,3 +11,6 @@ wheels/
 
 # Environment variables (contains API keys — never commit)
 .env
+
+# Local thread/conversation history database
+threads.db

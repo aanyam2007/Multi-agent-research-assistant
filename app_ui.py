@@ -6,11 +6,15 @@ from dotenv import load_dotenv
 # Load .env locally; on Streamlit Cloud push st.secrets into os.environ
 # so LangChain/Groq/Tavily libraries can read their API keys.
 load_dotenv()
-for _k, _v in st.secrets.items():
-    os.environ.setdefault(_k, str(_v))
+try:
+    for _k, _v in st.secrets.items():
+        os.environ.setdefault(_k, str(_v))
+except st.errors.StreamlitSecretNotFoundError:
+    pass  # no secrets.toml locally — fine, .env already loaded above
 
+import db  # noqa: E402 — must come after env setup
 from graph import build_graph  # noqa: E402 — must come after env setup
-from state import ResearchState
+from state import ResearchState  # noqa: E402
 
 # ── Page config ───────────────────────────────────────────────────────────────
 
@@ -20,6 +24,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+db.init_db()
 
 # ── Cache the compiled graph (built once per session) ─────────────────────────
 
@@ -43,10 +49,54 @@ AGENT_LABELS = {
     "writer":       "Writer",
 }
 
+# ── Session state ─────────────────────────────────────────────────────────────
+
+if "thread_id" not in st.session_state:
+    st.session_state.thread_id = None
+if "turns" not in st.session_state:
+    st.session_state.turns = []
+
+
+def _load_thread(thread_id: str | None) -> None:
+    st.session_state.thread_id = thread_id
+    st.session_state.turns = db.get_turns(thread_id) if thread_id else []
+
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.title("ℹ️ About")
+    st.title("🔬 Research Agent")
+
+    if st.button("➕ New thread", use_container_width=True):
+        _load_thread(None)
+        st.rerun()
+
+    st.divider()
+    st.caption("Threads")
+
+    threads = db.list_threads()
+    if not threads:
+        st.caption("No saved threads yet.")
+    for t in threads:
+        is_active = t["id"] == st.session_state.thread_id
+        col_select, col_delete = st.columns([5, 1])
+        with col_select:
+            if st.button(
+                ("📌 " if is_active else "") + t["title"],
+                key=f"thread_{t['id']}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary",
+            ):
+                _load_thread(t["id"])
+                st.rerun()
+        with col_delete:
+            if st.button("🗑️", key=f"delete_{t['id']}"):
+                db.delete_thread(t["id"])
+                if is_active:
+                    _load_thread(None)
+                st.rerun()
+
+    st.divider()
     st.markdown(
         "A **supervisor-worker** multi-agent pipeline:\n\n"
         "1. 🤖 **Orchestrator** plans & routes\n"
@@ -54,34 +104,47 @@ with st.sidebar:
         "3. 📊 **Analyst** synthesizes findings\n"
         "4. ✍️ **Writer** drafts the report"
     )
-    st.divider()
     st.caption("Powered by LangGraph · Groq · Tavily")
 
 # ── Header ────────────────────────────────────────────────────────────────────
 
 st.title("🔬 Multi-Agent Research Assistant")
-st.caption("Enter a query and watch the agent pipeline work in real time.")
+st.caption("Ask a question, then keep the conversation going — earlier turns are remembered.")
 st.divider()
+
+# ── Conversation history ─────────────────────────────────────────────────────
+
+for turn in st.session_state.turns:
+    with st.chat_message("user"):
+        st.write(turn["query"])
+    with st.chat_message("assistant"):
+        st.markdown(turn["final_report"] or "_No report was generated for this turn._")
+        with st.expander("Pipeline details", expanded=False):
+            if turn["plan"]:
+                st.caption(f"Orchestrator reasoning: {turn['plan']}")
+            if turn["analysis"]:
+                st.caption("**Analysis**")
+                st.caption(turn["analysis"])
+        if turn["final_report"]:
+            st.download_button(
+                label="📥 Download Report as Markdown",
+                data=turn["final_report"],
+                file_name="research_report.md",
+                mime="text/markdown",
+                key=f"download_{turn['id']}",
+            )
 
 # ── Query input ───────────────────────────────────────────────────────────────
 
-query = st.text_area(
-    "Enter your research query",
-    placeholder="e.g. What are the latest breakthroughs in nuclear fusion energy?",
-    height=110,
-)
+query = st.chat_input("Ask a research question…")
 
-run = st.button(
-    "🚀 Start Research",
-    type="primary",
-    disabled=not query.strip(),
-    use_container_width=True,
-)
-
-# ── Pipeline execution ────────────────────────────────────────────────────────
-
-if run and query.strip():
+if query:
     graph = get_graph()
+
+    history = [
+        {"query": t["query"], "final_report": t["final_report"]}
+        for t in st.session_state.turns
+    ]
 
     initial_state: ResearchState = {
         "query": query,
@@ -92,21 +155,21 @@ if run and query.strip():
         "final_report": "",
         "next_agent": "",
         "iteration_count": 0,
+        "history": history,
     }
 
-    st.divider()
-    col_left, col_right = st.columns([2, 3], gap="large")
+    with st.chat_message("user"):
+        st.write(query)
 
-    with col_right:
-        st.subheader("📄 Final Report")
+    with st.chat_message("assistant"):
         report_area = st.empty()
         report_area.info("Waiting for the Writer agent to finish…")
 
-    with col_left:
-        st.subheader("🔄 Agent Pipeline")
-
         with st.status("Running research pipeline…", expanded=True) as pipeline_status:
             final_report = ""
+            plan = ""
+            analysis = ""
+            research_data: list[str] = []
             iteration_count = 0
 
             try:
@@ -121,6 +184,8 @@ if run and query.strip():
                         reasoning = updates.get("plan", "")
                         iteration = updates.get("iteration_count", 0)
                         iteration_count = iteration
+                        if reasoning:
+                            plan = reasoning
                         st.write(
                             f"{icon} **{label}** — iteration {iteration} "
                             f"→ routing to `{next_a}`"
@@ -131,6 +196,7 @@ if run and query.strip():
 
                     elif node_name == "researcher":
                         chunks = updates.get("research_data", [])
+                        research_data.extend(chunks)
                         st.write(f"{icon} **{label}** — web research gathered")
                         if chunks:
                             with st.expander("Preview", expanded=False):
@@ -161,12 +227,17 @@ if run and query.strip():
                 st.error(f"Pipeline error: {exc}")
                 pipeline_status.update(label="Pipeline error ❌", state="error")
 
-    if final_report:
-        st.divider()
-        st.download_button(
-            label="📥 Download Report as Markdown",
-            data=final_report,
-            file_name="research_report.md",
-            mime="text/markdown",
-            use_container_width=True,
-        )
+    if st.session_state.thread_id is None:
+        st.session_state.thread_id = db.create_thread(query)
+
+    db.add_turn(
+        st.session_state.thread_id,
+        query=query,
+        plan=plan,
+        research_data=research_data,
+        analysis=analysis,
+        final_report=final_report,
+        iteration_count=iteration_count,
+    )
+    st.session_state.turns = db.get_turns(st.session_state.thread_id)
+    st.rerun()
