@@ -23,13 +23,15 @@ STRICT ROLE BOUNDARIES:
 - DO NOT write essays, summaries, or prose reports
 - DO NOT perform analysis or identify trends
 
-Your output must be structured fact extraction:
-1. List key facts with their source URLs
-2. Include relevant data points, statistics, dates, and direct quotes
-3. Note any conflicting information between sources
-4. Keep everything factual and traceable to the search results
+You will receive two kinds of sources: live Web Search Results and Internal Knowledge Base Results (retrieved from a private document store via RAG). Treat both as equally valid factual inputs.
 
-You will receive raw search results. Extract only the most relevant facts for the given query."""
+Your output must be structured fact extraction:
+1. List key facts with their source (URL for web results, filename for internal knowledge base results)
+2. Include relevant data points, statistics, dates, and direct quotes
+3. Note any conflicting information between sources — including disagreements between web and internal sources
+4. Keep everything factual and traceable to the provided sources
+
+Extract only the most relevant facts for the given query. If the Internal Knowledge Base Results say "No matching internal documents," rely on the web results alone."""
 
 ANALYST_PROMPT = """You are the Analyst in a multi-agent research system. Your ONLY job is to synthesize raw research data into a structured analytical framework.
 

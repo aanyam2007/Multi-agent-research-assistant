@@ -15,6 +15,7 @@ except st.errors.StreamlitSecretNotFoundError:
 import db  # noqa: E402 — must come after env setup
 from graph import build_graph  # noqa: E402 — must come after env setup
 from state import ResearchState  # noqa: E402
+from tools.rag import DATA_DIR, INDEXABLE_SUFFIXES, build_index  # noqa: E402
 
 # ── Page config ───────────────────────────────────────────────────────────────
 
@@ -97,10 +98,39 @@ with st.sidebar:
                 st.rerun()
 
     st.divider()
+    st.caption("Knowledge Base (RAG)")
+
+    uploaded_files = st.file_uploader(
+        "Add documents",
+        type=[s.lstrip(".") for s in INDEXABLE_SUFFIXES],
+        accept_multiple_files=True,
+        key="rag_uploader",
+        label_visibility="collapsed",
+    )
+
+    if uploaded_files and st.button("📚 Add to knowledge base", use_container_width=True):
+        DATA_DIR.mkdir(exist_ok=True)
+        for uploaded in uploaded_files:
+            (DATA_DIR / uploaded.name).write_bytes(uploaded.getvalue())
+        with st.spinner("Indexing documents…"):
+            chunk_count = build_index()
+        st.success(f"Indexed {chunk_count} chunk(s).")
+
+    indexed_files = sorted(
+        p.name for p in DATA_DIR.glob("*") if p.suffix.lower() in INDEXABLE_SUFFIXES
+    )
+    if indexed_files:
+        with st.expander(f"📄 Indexed documents ({len(indexed_files)})", expanded=False):
+            for name in indexed_files:
+                st.caption(name)
+    else:
+        st.caption("No documents indexed yet — the Researcher will use web search only.")
+
+    st.divider()
     st.markdown(
         "A **supervisor-worker** multi-agent pipeline:\n\n"
         "1. 🤖 **Orchestrator** plans & routes\n"
-        "2. 🔍 **Researcher** searches the web\n"
+        "2. 🔍 **Researcher** searches the web + your docs\n"
         "3. 📊 **Analyst** synthesizes findings\n"
         "4. ✍️ **Writer** drafts the report"
     )

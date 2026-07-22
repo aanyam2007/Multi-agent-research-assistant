@@ -14,3 +14,8 @@ wheels/
 
 # Local thread/conversation history database
 threads.db
+
+# Local RAG index and source documents (may be private/proprietary)
+chroma_db/
+data/*
+!data/.gitkeep

@@ -16,7 +16,7 @@ User Query
     ▼
 🤖 Orchestrator  ── plans & routes tasks
     │
-    ├──▶ 🔍 Researcher  ── searches the web (Tavily)
+    ├──▶ 🔍 Researcher  ── searches the web (Tavily) + your local docs (RAG)
     │
     ├──▶ 📊 Analyst     ── synthesizes & structures findings
     │
@@ -32,6 +32,7 @@ Every query runs as a **turn** inside a **thread**. Threads are resumable — re
 ## Features
 
 - **Real-time streaming UI** — watch each agent complete live in the browser
+- **Hybrid RAG + web search** — the Researcher pulls facts from your own documents (local vector store) alongside live Tavily results
 - **Resumable conversation threads** — every query/report is saved to SQLite; reopen any past thread and keep asking follow-ups with full context
 - **Supervisor routing** — Orchestrator uses structured outputs to decide the next step; never hallucinates a route
 - **Role-bounded agents** — explicit system prompts prevent agents from overstepping their responsibilities
@@ -51,6 +52,8 @@ Every query runs as a **turn** inside a **thread**. Threads are resumable — re
 | Observability | [LangSmith](https://smith.langchain.com) |
 | UI | [Streamlit](https://streamlit.io) |
 | Thread storage | SQLite (stdlib `sqlite3`) |
+| RAG vector store | [Chroma](https://www.trychroma.com) (local, persistent) |
+| Embeddings | [sentence-transformers](https://www.sbert.net) — `all-MiniLM-L6-v2` (local, free) |
 | Package manager | [uv](https://github.com/astral-sh/uv) |
 
 ---

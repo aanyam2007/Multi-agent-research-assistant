@@ -6,6 +6,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from state import ResearchState, format_history
 from prompts import RESEARCHER_PROMPT
 from tools.search import get_search_tool
+from tools.rag import get_relevant_docs
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ def _resolve_search_query(query: str, history: list[dict]) -> str:
     return response.content.strip()
 
 
-def _format_results(raw) -> str:
+def _format_web_results(raw) -> str:
     if isinstance(raw, list):
         parts = []
         for r in raw:
@@ -46,6 +47,14 @@ def _format_results(raw) -> str:
     return str(raw)
 
 
+def _format_internal_docs(docs: list[dict]) -> str:
+    if not docs:
+        return "No matching internal documents."
+    return "\n\n".join(
+        f"Source: {d['source']} (internal knowledge base)\n{d['content']}" for d in docs
+    )
+
+
 def researcher_node(state: ResearchState) -> dict:
     query = state["query"]
     search_query = _resolve_search_query(query, state.get("history", []))
@@ -53,12 +62,20 @@ def researcher_node(state: ResearchState) -> dict:
 
     search_tool = get_search_tool(max_results=5)
     raw_results = search_tool.invoke({"query": search_query})
-    formatted = _format_results(raw_results)
+    formatted_web = _format_web_results(raw_results)
+
+    internal_docs = get_relevant_docs(search_query, k=3)
+    logger.info("[RESEARCHER] Internal knowledge base: %d matching chunk(s)", len(internal_docs))
+    formatted_internal = _format_internal_docs(internal_docs)
 
     llm = ChatGroq(model="llama-3.3-70b-versatile")
     response = llm.invoke([
         SystemMessage(content=RESEARCHER_PROMPT),
-        HumanMessage(content=f"Query: {query}\n\nSearch Results:\n{formatted}"),
+        HumanMessage(
+            content=f"Query: {query}\n\n"
+                    f"Web Search Results:\n{formatted_web}\n\n"
+                    f"Internal Knowledge Base Results:\n{formatted_internal}"
+        ),
     ])
 
     logger.info("[RESEARCHER] Complete — extracted %d chars", len(response.content))
