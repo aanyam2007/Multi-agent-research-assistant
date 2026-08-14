@@ -71,7 +71,7 @@ reserch_agent/
 ├── main.py              # CLI entry point (local use, thread-aware)
 ├── agents/
 │   ├── orchestrator.py  # Supervisor — structured-output routing
-│   ├── researcher.py    # Tavily search + LLM fact extraction
+│   ├── researcher.py    # Tavily search + LLM fact extraction + RAG
 │   ├── analyst.py       # Synthesis into structured framework
 │   └── writer.py        # Final report drafting
 └── tools/
